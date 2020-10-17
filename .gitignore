@@ -1,0 +1,4 @@
+.vscode
+__pycache__
+DeepSpeech/data/lm/lm.binary
+deepspeech-0.4.1-checkpoint
