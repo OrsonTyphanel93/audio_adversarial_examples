@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 import argparse
 from shutil import copyfile
+import math
 
 import scipy.io.wavfile as wav
 
@@ -18,12 +19,6 @@ import os
 import sys
 from collections import namedtuple
 sys.path.append("DeepSpeech")
-
-try:
-    import pydub
-except:
-    print("pydub was not loaded, MP3 compression will not work")
-
 import DeepSpeech
 
 from tensorflow.python.keras.backend import ctc_label_dense_to_sparse
@@ -34,21 +29,10 @@ from tf_logits import get_logits
 # value in CTC decoding, and can not occur in the phrase.
 toks = " abcdefghijklmnopqrstuvwxyz'-"
 
-def convert_mp3(new, lengths):
-    import pydub
-    wav.write("/tmp/load.wav", 16000,
-              np.array(np.clip(np.round(new[0][:lengths[0]]),
-                               -2**15, 2**15-1),dtype=np.int16))
-    pydub.AudioSegment.from_wav("/tmp/load.wav").export("/tmp/saved.mp3")
-    raw = pydub.AudioSegment.from_mp3("/tmp/saved.mp3")
-    mp3ed = np.array([struct.unpack("<h", raw.raw_data[i:i+2])[0] for i in range(0,len(raw.raw_data),2)])[np.newaxis,:lengths[0]]
-    return mp3ed
-    
-
 class Attack:
     def __init__(self, sess, loss_fn, phrase_length, max_audio_len,
                  learning_rate=10, num_iterations=5000, batch_size=1,
-                 mp3=False, l2penalty=float('inf'), restore_path=None):
+                 l2penalty=float('inf'), restore_path=None):
         """
         Set up the attack procedure.
 
@@ -62,7 +46,6 @@ class Attack:
         self.batch_size = batch_size
         self.phrase_length = phrase_length
         self.max_audio_len = max_audio_len
-        self.mp3 = mp3
 
         # Create all the variables necessary
         # they are prefixed with qq_ just so that we know which
@@ -119,9 +102,9 @@ class Attack:
             self.expanded_loss = tf.constant(0)
             
         elif loss_fn == "CW":
-            raise NotImplemented("The current version of this project does not include the CW loss function implementation.")
+            raise NotImplementedError("The current version of this project does not include the CW loss function implementation.")
         else:
-            raise
+            raise ValueError("Unknown loss function")
 
         self.loss = loss
         self.ctcloss = ctcloss
@@ -139,7 +122,7 @@ class Attack:
         sess.run(tf.variables_initializer(new_vars+[delta]))
 
         # Decoder from the logits, to see how we're doing
-        self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=100)
+        self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=1)
 
     def attack(self, audio, lengths, target, finetune=None):
         sess = self.sess
@@ -177,12 +160,6 @@ class Attack:
             if i%10 == 0:
                 new, delta, r_out, r_logits = sess.run((self.new_input, self.delta, self.decoded, self.logits))
                 lst = [(r_out, r_logits)]
-                if self.mp3:
-                    mp3ed = convert_mp3(new, lengths)
-                    
-                    mp3_out, mp3_logits = sess.run((self.decoded, self.logits),
-                                                   {self.new_input: mp3ed})
-                    lst.append((mp3_out, mp3_logits))
 
                 for out, logits in lst:
                     chars = out[0].values
@@ -203,12 +180,7 @@ class Attack:
                     print("\n".join(res2))
 
 
-            if self.mp3:
-                new = sess.run(self.new_input)
-                mp3ed = convert_mp3(new, lengths)
-                feed_dict = {self.new_input: mp3ed}
-            else:
-                feed_dict = {}
+            feed_dict = {}
                 
             # Actually do the optimization ste
             d, el, cl, l, logits, new_input, _ = sess.run((self.delta, self.expanded_loss,
@@ -218,48 +190,41 @@ class Attack:
                                                           feed_dict)
                     
             # Report progress
-            print("%.3f"%np.mean(cl), "\t", "\t".join("%.3f"%x for x in cl))
+            print(i+1, "%.3f"%np.mean(cl), "\t", "\t".join("%.3f"%x for x in cl))
 
             logits = np.argmax(logits,axis=2).T
-            for ii in range(self.batch_size):
-                # Every 100 iterations, check if we've succeeded
-                # if we have (or if it's the final epoch) then we
-                # should record our progress and decrease the
-                # rescale constant.
-                if (self.loss_fn == "CTC" and i%10 == 0 and res[ii] == "".join([toks[x] for x in target[ii]])) \
-                   or (i == MAX-1 and final_deltas[ii] is None):
-                    # Get the current constant
-                    rescale = sess.run(self.rescale)
-                    if rescale[ii]*2000 > np.max(np.abs(d)):
-                        # If we're already below the threshold, then
-                        # just reduce the threshold to the current
-                        # point and save some time.
-                        print("It's way over", np.max(np.abs(d[ii]))/2000.0)
-                        rescale[ii] = np.max(np.abs(d[ii]))/2000.0
+            # Every 100 iterations, check if we've succeeded
+            # if we have (or if it's the final epoch) then we
+            # should record our progress and decrease the
+            # rescale constant.
+            if (self.loss_fn == "CTC" and i%10 == 0 and res[0] == "".join([toks[x] for x in target[0]])) \
+                or (i == MAX-1 and final_deltas[0] is None):
+                # Get the current constant
+                rescale = sess.run(self.rescale)
+                if rescale[0]*2000 > np.max(np.abs(d)):
+                    # If we're already below the threshold, then
+                    # just reduce the threshold to the current
+                    # point and save some time.
+                    print("It's way over", np.max(np.abs(d[0]))/2000.0)
+                    rescale[0] = np.max(np.abs(d[0]))/2000.0
 
-                    # Otherwise reduce it by some constant. The closer
-                    # this number is to 1, the better quality the result
-                    # will be. The smaller, the quicker we'll converge
-                    # on a result but it will be lower quality.
-                    rescale[ii] *= .8
+                # Otherwise reduce it by some constant. The closer
+                # this number is to 1, the better quality the result
+                # will be. The smaller, the quicker we'll converge
+                # on a result but it will be lower quality.
+                rescale[0] *= .8
 
-                    # Adjust the best solution found so far
-                    final_deltas[ii] = new_input[ii]
+                # Adjust the best solution found so far
+                final_deltas[0] = new_input[0]
 
-                    print("Worked i=%d ctcloss=%f bound=%f"%(ii,cl[ii], 2000*rescale[ii][0]))
-                    #print('delta',np.max(np.abs(new_input[ii]-audio[ii])))
-                    sess.run(self.rescale.assign(rescale))
-
-                    # Just for debugging, save the adversarial example
-                    # to /tmp so we can see it if we want
-                    wav.write("/tmp/adv.wav", 16000,
-                              np.array(np.clip(np.round(new_input[ii]),
-                                               -2**15, 2**15-1),dtype=np.int16))
+                print("Worked i=%d ctcloss=%f bound=%f"%(0,cl[0], 2000*rescale[0][0]))
+                #print('delta',np.max(np.abs(new_input[ii]-audio[ii])))
+                sess.run(self.rescale.assign(rescale))
 
         return final_deltas
     
     
-def main():
+def attack(input, target, output, lr=100, iterations=1000, l2penalty=math.inf):
     """
     Do the attack here.
 
@@ -269,99 +234,39 @@ def main():
     For now we only support using CTC loss and only generating
     one adversarial example at a time.
     """
-    parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('--in', type=str, dest="input", nargs='+',
-                        required=True,
-                        help="Input audio .wav file(s), at 16KHz (separated by spaces)")
-    parser.add_argument('--target', type=str,
-                        required=True,
-                        help="Target transcription")
-    parser.add_argument('--out', type=str, nargs='+',
-                        required=False,
-                        help="Path for the adversarial example(s)")
-    parser.add_argument('--outprefix', type=str,
-                        required=False,
-                        help="Prefix of path for adversarial examples")
-    parser.add_argument('--finetune', type=str, nargs='+',
-                        required=False,
-                        help="Initial .wav file(s) to use as a starting point")
-    parser.add_argument('--lr', type=int,
-                        required=False, default=100,
-                        help="Learning rate for optimization")
-    parser.add_argument('--iterations', type=int,
-                        required=False, default=1000,
-                        help="Maximum number of iterations of gradient descent")
-    parser.add_argument('--l2penalty', type=float,
-                        required=False, default=float('inf'),
-                        help="Weight for l2 penalty on loss function")
-    parser.add_argument('--mp3', action="store_const", const=True,
-                        required=False,
-                        help="Generate MP3 compression resistant adversarial examples")
-    parser.add_argument('--restore_path', type=str,
-                        required=True,
-                        help="Path to the DeepSpeech checkpoint (ending in model0.4.1)")
-    args = parser.parse_args()
-    while len(sys.argv) > 1:
-        sys.argv.pop()
     
     with tf.Session() as sess:
         finetune = []
         audios = []
         lengths = []
-
-        if args.out is None:
-            assert args.outprefix is not None
-        else:
-            assert args.outprefix is None
-            assert len(args.input) == len(args.out)
-        if args.finetune is not None and len(args.finetune):
-            assert len(args.input) == len(args.finetune)
         
         # Load the inputs that we're given
-        for i in range(len(args.input)):
-            fs, audio = wav.read(args.input[i])
-            assert fs == 16000
-            assert audio.dtype == np.int16
-            print('source dB', 20*np.log10(np.max(np.abs(audio))))
-            audios.append(list(audio))
-            lengths.append(len(audio))
-
-            if args.finetune is not None:
-                finetune.append(list(wav.read(args.finetune[i])[1]))
+        fs, audio = wav.read(input)
+        assert fs == 16000
+        assert audio.dtype == np.int16
+        print('source dB', 20*np.log10(np.max(np.abs(audio))))
+        audios.append(list(audio))
+        lengths.append(len(audio))
 
         maxlen = max(map(len,audios))
         audios = np.array([x+[0]*(maxlen-len(x)) for x in audios])
-        finetune = np.array([x+[0]*(maxlen-len(x)) for x in finetune])
+        finetune = np.array([])
 
-        phrase = args.target
+        phrase = target
 
         # Set up the attack class and run it
         attack = Attack(sess, 'CTC', len(phrase), maxlen,
                         batch_size=len(audios),
-                        mp3=args.mp3,
-                        learning_rate=args.lr,
-                        num_iterations=args.iterations,
-                        l2penalty=args.l2penalty,
-                        restore_path=args.restore_path)
+                        learning_rate=lr,
+                        num_iterations=iterations,
+                        l2penalty=l2penalty,
+                        restore_path="deepspeech-0.4.1-checkpoint/model.v0.4.1")
         deltas = attack.attack(audios,
                                lengths,
                                [[toks.index(x) for x in phrase]]*len(audios),
                                finetune)
 
-        # And now save it to the desired output
-        if args.mp3:
-            convert_mp3(deltas, lengths)
-            copyfile("/tmp/saved.mp3", args.out[0])
-            print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
-        else:
-            for i in range(len(args.input)):
-                if args.out is not None:
-                    path = args.out[i]
-                else:
-                    path = args.outprefix+str(i)+".wav"
-                wav.write(path, 16000,
-                          np.array(np.clip(np.round(deltas[i][:lengths[i]]),
-                                           -2**15, 2**15-1),dtype=np.int16))
-                print("Final distortion", np.max(np.abs(deltas[i][:lengths[i]]-audios[i][:lengths[i]])))
+        wav.write(output, 16000, np.array(np.clip(np.round(deltas[0][:lengths[0]]), -2**15, 2**15-1),dtype=np.int16))
+        print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
 
-main()
+attack("sample-000000.wav", "this is a test", "adv.wav")
