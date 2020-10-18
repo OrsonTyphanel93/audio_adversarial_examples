@@ -49,6 +49,3 @@ def classify(input):
                                lengths: [length]})
 
         return "".join([toks[x] for x in r[0].values])
-
-#print(classify("sample-000000.wav"))
-print(classify("adv.wav"))

@@ -268,5 +268,3 @@ def attack(input, target, output, lr=100, iterations=1000, l2penalty=math.inf):
 
         wav.write(output, 16000, np.array(np.clip(np.round(deltas[0][:lengths[0]]), -2**15, 2**15-1),dtype=np.int16))
         print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
-
-attack("sample-000000.wav", "this is a test", "adv.wav")
