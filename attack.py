@@ -5,8 +5,14 @@
 ## This program is licenced under the BSD 2-Clause licence,
 ## contained in the LICENCE file in this directory.
 
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 import tensorflow as tf
+
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
 import argparse
 from shutil import copyfile
 import math
@@ -111,7 +117,7 @@ class Attack:
         
         # Set up the Adam optimizer to perform gradient descent for us
         start_vars = set(x.name for x in tf.global_variables())
-        optimizer = tf.train.AdamOptimizer(learning_rate)
+        optimizer = tf.train.AdagradOptimizer(learning_rate)
 
         grad,var = optimizer.compute_gradients(self.loss, [delta])[0]
         self.train = optimizer.apply_gradients([(tf.sign(grad),var)])

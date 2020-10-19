@@ -5,8 +5,14 @@
 ## This program is licenced under the BSD 2-Clause licence,
 ## contained in the LICENCE file in this directory.
 
+
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 import tensorflow as tf
+
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 import scipy.io.wavfile as wav
 
