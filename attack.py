@@ -117,6 +117,8 @@ class Attack:
         
         # Set up the Adam optimizer to perform gradient descent for us
         start_vars = set(x.name for x in tf.global_variables())
+        tf.keras.optimizers.Nadam()
+        tf.train.optimi
         optimizer = tf.train.AdagradOptimizer(learning_rate)
 
         grad,var = optimizer.compute_gradients(self.loss, [delta])[0]
@@ -196,7 +198,7 @@ class Attack:
                                                           feed_dict)
                     
             # Report progress
-            print(i+1, "%.3f"%np.mean(cl), "\t", "\t".join("%.3f"%x for x in cl))
+            print(i+1, "%.3f"%np.mean(cl))
 
             logits = np.argmax(logits,axis=2).T
             # Every 100 iterations, check if we've succeeded
@@ -223,10 +225,11 @@ class Attack:
                 # Adjust the best solution found so far
                 final_deltas[0] = new_input[0]
 
-                print("Worked i=%d ctcloss=%f bound=%f"%(0,cl[0], 2000*rescale[0][0]))
+                print("ctcloss=%f bound=%f"%(cl[0], 2000*rescale[0][0]))
                 #print('delta',np.max(np.abs(new_input[ii]-audio[ii])))
                 sess.run(self.rescale.assign(rescale))
 
+        print(time.time() - now)
         return final_deltas
     
     
