@@ -98,13 +98,7 @@ class Attack:
             ctcloss = tf.nn.ctc_loss(labels=tf.cast(target, tf.int32),
                                      inputs=logits, sequence_length=lengths)
 
-            # Slight hack: an infinite l2 penalty means that we don't penalize l2 distortion
-            # The code runs faster at a slight cost of distortion, and also leaves one less
-            # paramaeter that requires tuning.
-            if not np.isinf(l2penalty):
-                loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + l2penalty*ctcloss
-            else:
-                loss = ctcloss
+            loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + l2penalty*ctcloss
             self.expanded_loss = tf.constant(0)
             
         elif loss_fn == "CW":
@@ -117,8 +111,6 @@ class Attack:
         
         # Set up the Adam optimizer to perform gradient descent for us
         start_vars = set(x.name for x in tf.global_variables())
-        tf.keras.optimizers.Nadam()
-        tf.train.optimi
         optimizer = tf.train.AdagradOptimizer(learning_rate)
 
         grad,var = optimizer.compute_gradients(self.loss, [delta])[0]
@@ -160,10 +152,8 @@ class Attack:
         # We'll make a bunch of iterations of gradient descent here
         now = time.time()
         MAX = self.num_iterations
+        print("i,loss")
         for i in range(MAX):
-            iteration = i
-            now = time.time()
-
             # Print out some debug information every 10 iterations.
             if i%10 == 0:
                 new, delta, r_out, r_logits = sess.run((self.new_input, self.delta, self.decoded, self.logits))
@@ -278,4 +268,4 @@ def attack(input, target, output, lr=100, iterations=1000, l2penalty=math.inf):
         wav.write(output, 16000, np.array(np.clip(np.round(deltas[0][:lengths[0]]), -2**15, 2**15-1),dtype=np.int16))
         print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
 
-attack(sys.argv[1], sys.argv[2], sys.argv[3])
+attack(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]))
