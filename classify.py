@@ -55,3 +55,5 @@ def classify(input):
                                lengths: [length]})
 
         return "".join([toks[x] for x in r[0].values])
+
+print(classify(sys.argv[1]))
