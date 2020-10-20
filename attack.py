@@ -38,7 +38,7 @@ toks = " abcdefghijklmnopqrstuvwxyz'-"
 class Attack:
     def __init__(self, sess, loss_fn, phrase_length, max_audio_len,
                  learning_rate=10, num_iterations=5000, batch_size=1,
-                 l2penalty=float('inf'), restore_path=None):
+                 K=1, restore_path=None):
         """
         Set up the attack procedure.
 
@@ -98,7 +98,7 @@ class Attack:
             ctcloss = tf.nn.ctc_loss(labels=tf.cast(target, tf.int32),
                                      inputs=logits, sequence_length=lengths)
 
-            loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + l2penalty*ctcloss
+            loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + K*ctcloss
             self.expanded_loss = tf.constant(0)
             
         elif loss_fn == "CW":
@@ -223,7 +223,7 @@ class Attack:
         return final_deltas
     
     
-def attack(input, target, output, lr=100, iterations=1000, l2penalty=math.inf):
+def attack(input, target, output, lr=100, iterations=1000, K=1):
     """
     Do the attack here.
 
@@ -258,7 +258,7 @@ def attack(input, target, output, lr=100, iterations=1000, l2penalty=math.inf):
                         batch_size=len(audios),
                         learning_rate=lr,
                         num_iterations=iterations,
-                        l2penalty=l2penalty,
+                        K=K,
                         restore_path="deepspeech-0.4.1-checkpoint/model.v0.4.1")
         deltas = attack.attack(audios,
                                lengths,
