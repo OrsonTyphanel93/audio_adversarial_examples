@@ -33,7 +33,7 @@ from tf_logits import get_logits
 toks = " abcdefghijklmnopqrstuvwxyz'-"
 restore_path = "deepspeech-0.4.1-checkpoint/model.v0.4.1"
 
-def classify(input):
+def classify(input, psearch):
     with tf.Session() as sess:
         _, audio = wav.read(input)
         N = len(audio)
@@ -47,7 +47,7 @@ def classify(input):
         saver.restore(sess, restore_path)
          
         # beam_width=500
-        decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=1)
+        decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=(1 if psearch=="greedy" else 100))
 
         #print('logits shape', logits.shape)
         length = (len(audio)-1)//320
@@ -56,4 +56,4 @@ def classify(input):
 
         return "".join([toks[x] for x in r[0].values])
 
-print(classify(sys.argv[1]))
+print(classify(sys.argv[1], sys.argv[2]))

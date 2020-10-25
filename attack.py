@@ -38,7 +38,7 @@ toks = " abcdefghijklmnopqrstuvwxyz'-"
 class Attack:
     def __init__(self, sess, loss_fn, phrase_length, max_audio_len,
                  learning_rate=10, num_iterations=5000, batch_size=1,
-                 K=1, restore_path=None):
+                 K=1, restore_path=None, poptimizer="rms", psearch="greedy", ploss="combined"):
         """
         Set up the attack procedure.
 
@@ -98,7 +98,10 @@ class Attack:
             ctcloss = tf.nn.ctc_loss(labels=tf.cast(target, tf.int32),
                                      inputs=logits, sequence_length=lengths)
 
-            loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + K*ctcloss
+            if ploss == "combined":
+                loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + K*ctcloss
+            else:
+                loss = ctcloss
             self.expanded_loss = tf.constant(0)
             
         elif loss_fn == "CW":
@@ -109,9 +112,11 @@ class Attack:
         self.loss = loss
         self.ctcloss = ctcloss
         
-        # Set up the Adam optimizer to perform gradient descent for us
         start_vars = set(x.name for x in tf.global_variables())
-        optimizer = tf.train.RMSPropOptimizer(learning_rate)
+        if poptimizer == "rms":
+            optimizer = tf.train.RMSPropOptimizer(learning_rate)
+        else:
+            optimizer = tf.train.AdamOptimizer(learning_rate)
 
         grad,var = optimizer.compute_gradients(self.loss, [delta])[0]
         self.train = optimizer.apply_gradients([(tf.sign(grad),var)])
@@ -122,7 +127,7 @@ class Attack:
         sess.run(tf.variables_initializer(new_vars+[delta]))
 
         # Decoder from the logits, to see how we're doing
-        self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=1)
+        self.decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=(1 if psearch == "greedy" else 500))
 
     def attack(self, audio, lengths, target, finetune=None):
         sess = self.sess
@@ -219,11 +224,10 @@ class Attack:
                 #print('delta',np.max(np.abs(new_input[ii]-audio[ii])))
                 sess.run(self.rescale.assign(rescale))
 
-        print(time.time() - now)
+        print(f"Time taken {time.time() - now:.2f}s")
         return final_deltas
     
-    
-def attack(input, target, output, lr=100, iterations=1000, K=1):
+def attack(input, target, output, lr=100, iterations=1000, K=1, poptimizer="rms", psearch="greedy", ploss="combined"):
     """
     Do the attack here.
 
@@ -259,7 +263,10 @@ def attack(input, target, output, lr=100, iterations=1000, K=1):
                         learning_rate=lr,
                         num_iterations=iterations,
                         K=K,
-                        restore_path="deepspeech-0.4.1-checkpoint/model.v0.4.1")
+                        restore_path="deepspeech-0.4.1-checkpoint/model.v0.4.1",
+                        poptimizer=poptimizer,
+                        psearch=psearch,
+                        ploss=ploss)
         deltas = attack.attack(audios,
                                lengths,
                                [[toks.index(x) for x in phrase]]*len(audios),
@@ -268,4 +275,4 @@ def attack(input, target, output, lr=100, iterations=1000, K=1):
         wav.write(output, 16000, np.array(np.clip(np.round(deltas[0][:lengths[0]]), -2**15, 2**15-1),dtype=np.int16))
         print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
 
-attack(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]))
+attack(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]), sys.argv[7], sys.argv[8], sys.argv[9])
