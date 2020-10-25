@@ -227,7 +227,7 @@ class Attack:
         print(f"Time taken {time.time() - now:.2f}s")
         return final_deltas
     
-def attack(input, target, output, lr=100, iterations=1000, K=1, poptimizer="rms", psearch="greedy", ploss="combined"):
+def attack(input, target, output, lr, iterations, K, poptimizer, psearch, ploss):
     """
     Do the attack here.
 
