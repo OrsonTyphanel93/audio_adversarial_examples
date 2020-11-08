@@ -99,6 +99,7 @@ class Attack:
                                      inputs=logits, sequence_length=lengths)
 
             if ploss == "combined":
+                # include distortion in loss function..
                 loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + K*ctcloss
             else:
                 loss = ctcloss
@@ -272,6 +273,7 @@ def attack(input, target, output, lr, iterations, K, poptimizer, psearch, ploss)
                                [[toks.index(x) for x in phrase]]*len(audios),
                                finetune)
 
+        # save the distorted wave
         wav.write(output, 16000, np.array(np.clip(np.round(deltas[0][:lengths[0]]), -2**15, 2**15-1),dtype=np.int16))
         print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
 

@@ -40,13 +40,14 @@ def classify(input, psearch):
         new_input = tf.placeholder(tf.float32, [1, N])
         lengths = tf.placeholder(tf.int32, [1])
 
+        # get logits (probability matrix) from deepspeech
         with tf.variable_scope("", reuse=tf.AUTO_REUSE):
             logits = get_logits(new_input, lengths)
 
         saver = tf.train.Saver()
         saver.restore(sess, restore_path)
          
-        # beam_width=500
+        # decode them using either greedy or beam search
         decoded, _ = tf.nn.ctc_beam_search_decoder(logits, lengths, merge_repeated=False, beam_width=(1 if psearch=="greedy" else 100))
 
         #print('logits shape', logits.shape)
