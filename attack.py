@@ -277,4 +277,4 @@ def attack(input, target, output, lr, iterations, K, poptimizer, psearch, ploss)
         wav.write(output, 16000, np.array(np.clip(np.round(deltas[0][:lengths[0]]), -2**15, 2**15-1),dtype=np.int16))
         print("Final distortion", np.max(np.abs(deltas[0][:lengths[0]]-audios[0][:lengths[0]])))
 
-attack(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]), sys.argv[7], sys.argv[8], sys.argv[9])
+#attack(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]), sys.argv[7], sys.argv[8], sys.argv[9])
