@@ -57,4 +57,4 @@ def classify(input, psearch):
 
         return "".join([toks[x] for x in r[0].values])
 
-print(classify(sys.argv[1], sys.argv[2]))
+#print(classify(sys.argv[1], sys.argv[2]))
